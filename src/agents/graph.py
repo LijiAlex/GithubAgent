@@ -7,7 +7,7 @@ from langchain.tools import tool, InjectedToolCallId
 from langchain_community.agent_toolkits.github.toolkit import GitHubToolkit
 from langchain_community.utilities.github import GitHubAPIWrapper
 from langchain_core.messages import ToolMessage
-from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 
 from .utils import (
@@ -21,7 +21,7 @@ from .utils import (
 load_dotenv()
 
 
-llm = ChatGroq(model="openai/gpt-oss-120b")
+llm = ChatOpenAI(model="gpt-4o-mini")
 github = GitHubAPIWrapper()
 toolkit = GitHubToolkit.from_github_api_wrapper(github, include_release_tools=True)
 tools = [rename_tool(t) for t in toolkit.get_tools()]
@@ -32,11 +32,20 @@ _documentation_agent = create_agent(
     tools=get_documentation_tools(tools),
     name="documentation_agent",
     system_prompt=(
-        "You are a documentation agent. Your task is to help write and maintain project documentation, "
-        "including README files, API docs, and other relevant materials. Use the provided tools to read "
-        "existing files, search code, and create or update documentation as needed. Always ensure that the "
-        "documentation is clear, concise, and up-to-date with the latest project changes. "
-        "Always include the full result of your work in your final message so the coordinator can see it."
+        "You are a documentation agent. You do not draft documentation in chat — you commit it to the "
+        "repository and open a pull request for it.\n\n"
+        "Follow this procedure for every documentation task:\n"
+        "1. Inspect the repo with get_main_branch_files_overview / get_directory_files / read_file so you "
+        "know whether the target file already exists and what it currently says.\n"
+        "2. Call create_branch with a short descriptive name (e.g. 'docs/update-readme'). If that branch "
+        "already exists, call set_active_branch on it instead. Never work directly on the main branch — "
+        "create_pull_request fails when the active branch is the base branch.\n"
+        "3. Write the content with create_file (new file) or update_file (existing file). This step is "
+        "mandatory. Returning documentation text without writing it to the branch is a failed task.\n"
+        "4. Call create_pull_request to open the PR from your branch. Pass the title on the first line and "
+        "the description after a blank line.\n\n"
+        "Finish by reporting the branch name, the file path you wrote, and the PR URL. If a tool call "
+        "fails, report the exact error rather than continuing to the next step."
     ),
 )
 
@@ -91,8 +100,9 @@ class AgentName(str, Enum):
 @tool(
     "documentation_agent",
     description=(
-        "Handles project documentation tasks: writing/updating README files, API docs, and any "
-        "other project documentation. Pass a clear description of the documentation task to perform."
+        "Handles project documentation end to end: writes/updates README files, API docs, and other "
+        "project documentation, commits them to a new branch, and opens the pull request for them. "
+        "Pass a clear description of the documentation task to perform."
     ),
 )
 def call_documentation_agent(
@@ -168,11 +178,14 @@ github_agent = create_agent(
     system_prompt=(
         "You are a GitHub project coordinator that delegates tasks to specialized subagents via tools. "
         "Available subagents:\n"
-        "- documentation_agent: writes and maintains README files, API docs, and other project documentation\n"
+        "- documentation_agent: writes and maintains README files, API docs, and other project "
+        "documentation, commits them to a branch, and opens the PR for them\n"
         "- release_notes_agent: generates release notes for new software versions\n"
         "- issue_agent: searches, retrieves, and comments on project issues\n"
         "- code_review_agent: reviews pull requests and provides code quality feedback\n\n"
-        "Delegate each task to the most appropriate subagent. "
+        "Delegate each task to the most appropriate subagent. A documentation change and the PR that "
+        "ships it are a single task for documentation_agent — do not split them across subagents, and do "
+        "not ask code_review_agent to open a PR for work another subagent produced. "
         "Invoke one subagent at a time. Do not perform any GitHub operations yourself — "
         "always use the provided tools to delegate work."
     ),
