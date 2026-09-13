@@ -9,6 +9,7 @@ dependencies = [
     "langchain-community>=0.4.1",
     "langchain-core>=1.2.26",
     "langchain-groq>=1.1.2",
+    "langchain-openai>=1.6.2",
     "langgraph>=1.1.6",
     "pygithub>=2.9.0",
     "tiktoken>=0.12.0",
