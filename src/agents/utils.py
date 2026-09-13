@@ -77,5 +77,6 @@ def get_documentation_tools(tools: List[Tool]) -> List[Tool]:
         "create_file",
         "search_code",
         "set_active_branch",
+        "create_pull_request",
     ]
     return [tool for tool in tools if tool.name in documentation_tool_names]
